@@ -9,8 +9,7 @@ Lite sensor. It allows a compatible humidifier to receive temperature and
 humidity from any ESPHome sensor, including values imported from Home
 Assistant, instead of using a physical Qingping sensor.
 
-The humidifier reads the emulated sensor passively from BLE advertisements. No
-BLE pairing, GATT connection, or Xiaomi account is required.
+The humidifier reads the emulated sensor passively from BLE advertisements.
 
 ## Tested with
 
@@ -18,8 +17,7 @@ BLE pairing, GATT connection, or Xiaomi account is required.
 - TION Iris
 
 Both devices successfully receive the advertised temperature and humidity.
-The implementation sends only the tested Qingping `0xFDCD` Service Data frame,
-with the pairing flag disabled.
+The implementation sends only the tested Qingping `0xFDCD` Service Data frame.
 
 ## How it works
 
@@ -31,7 +29,7 @@ The component:
 - repeats the current frame at a configurable interval (1 second by default);
 - updates the frame whenever its source temperature, humidity, or optional
   battery sensor publishes a new value;
-- exposes no GATT service and performs no BLE pairing.
+- exposes no GATT service.
 
 ## Installation
 

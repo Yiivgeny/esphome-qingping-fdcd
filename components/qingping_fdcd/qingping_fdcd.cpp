@@ -103,7 +103,6 @@ void QingpingFDCD::dump_config() {
   ESP_LOGCONFIG(TAG, "Qingping FDCD emulator:");
   ESP_LOGCONFIG(TAG, "  Advertising interval: %" PRIu32 " ms", this->advertising_interval_ms_);
   ESP_LOGCONFIG(TAG, "  Advertising channels: 37, 38, 39");
-  ESP_LOGCONFIG(TAG, "  Pairing flag: off");
   ESP_LOGCONFIG(TAG, "  Initial temperature: %.1f C", this->temperature_x10_ / 10.0f);
   ESP_LOGCONFIG(TAG, "  Initial humidity: %.1f %%", this->humidity_x10_ / 10.0f);
   ESP_LOGCONFIG(TAG, "  Battery: %u %%", this->battery_level_);
@@ -133,7 +132,7 @@ void QingpingFDCD::build_payload_() {
   this->advertising_data_[i++] = 0x16;
   this->advertising_data_[i++] = 0xCD;
   this->advertising_data_[i++] = 0xFD;
-  this->advertising_data_[i++] = 0x08;  // Pairing/binding flag off.
+  this->advertising_data_[i++] = 0x08;
   this->advertising_data_[i++] = 0x10;  // Qingping Temp/RH Lite product id.
   for (int8_t m = 5; m >= 0; --m)
     this->advertising_data_[i++] = this->mac_[m];
@@ -257,4 +256,3 @@ void QingpingFDCD::reset_ble_state_() {
 void QingpingFDCD::ble_before_disabled_event_handler() { this->reset_ble_state_(); }
 
 }  // namespace esphome::qingping_fdcd
-
