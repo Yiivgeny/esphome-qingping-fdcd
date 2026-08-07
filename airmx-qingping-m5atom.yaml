@@ -1,0 +1,45 @@
+esphome:
+  name: airmx-qingping-emulator
+  friendly_name: AirMX Qingping Emulator
+
+esp32:
+  board: m5stack-atom
+  framework:
+    type: esp-idf
+
+external_components:
+  - source:
+      type: local
+      path: components
+    components: [qingping_fdcd]
+
+logger:
+
+# The emulator owns BLE advertising. Do not set `advertising: true` here.
+esp32_ble:
+
+# Replace these two template sensors with any real ESPHome sensors or with
+# `platform: homeassistant` imports. The IDs are the component's inputs.
+sensor:
+  - platform: template
+    id: source_temperature
+    name: Source temperature
+    unit_of_measurement: "°C"
+    accuracy_decimals: 1
+    update_interval: 10s
+    lambda: return 23.7f;
+
+  - platform: template
+    id: source_humidity
+    name: Source humidity
+    unit_of_measurement: "%"
+    accuracy_decimals: 1
+    update_interval: 10s
+    lambda: return 48.2f;
+
+qingping_fdcd:
+  temperature: source_temperature
+  humidity: source_humidity
+  battery_level: 90
+  advertising_interval: 1s
+
