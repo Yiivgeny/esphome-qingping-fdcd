@@ -1,8 +1,27 @@
 # Qingping FDCD emulator for ESPHome
 
-This external component makes an ESP32 advertise as a Qingping Temp/RH Lite
-sensor for an AirMX A3S. It sends only the tested `0xFDCD` Service Data frame,
+[Русская версия](README_ru.md)
+
+## Purpose
+
+This external ESPHome component makes an ESP32 advertise as a Qingping Temp/RH
+Lite sensor. It allows a compatible humidifier to receive temperature and
+humidity from any ESPHome sensor, including values imported from Home
+Assistant, instead of using a physical Qingping sensor.
+
+The humidifier reads the emulated sensor passively from BLE advertisements. No
+BLE pairing, GATT connection, or Xiaomi account is required.
+
+## Tested with
+
+- AIRMX AirWater A3S
+- TION Iris
+
+Both devices successfully receive the advertised temperature and humidity.
+The implementation sends only the tested Qingping `0xFDCD` Service Data frame,
 with the pairing flag disabled.
+
+## How it works
 
 The component:
 
