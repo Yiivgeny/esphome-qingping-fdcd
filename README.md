@@ -58,6 +58,49 @@ qingping_fdcd:
 optional `battery` setting can reference another sensor; otherwise the fixed
 `battery_level` value is used.
 
+## Using the original sensor MAC address
+
+The ESP32 can use the BLE MAC address of the original sensor. Run the MAC
+override at boot with priority `400`, before the BLE stack is initialized.
+Replace the six bytes below with the original sensor address. Write them in
+the normal displayed order; do not reverse them.
+
+```yaml
+esphome:
+  includes:
+    - <esp_mac.h>
+  on_boot:
+    priority: 400
+    then:
+      - lambda: |-
+          // Write the MAC in normal order; do not reverse it.
+          const uint8_t mac[6] = {
+            0x10, 0x06, 0x1C, 0x15, 0xC5, 0xBA
+          };
+
+          const esp_err_t err =
+              esp_iface_mac_addr_set(mac, ESP_MAC_BT);
+
+          if (err == ESP_OK) {
+            ESP_LOGI(
+              "ble_mac",
+              "BLE MAC set to %02X:%02X:%02X:%02X:%02X:%02X",
+              mac[0], mac[1], mac[2],
+              mac[3], mac[4], mac[5]
+            );
+          } else {
+            ESP_LOGE(
+              "ble_mac",
+              "Failed to set BLE MAC: %s",
+              esp_err_to_name(err)
+            );
+          }
+```
+
+Keep the original sensor powered off while the emulator is using its address.
+Two active BLE devices with the same public MAC can cause unpredictable sensor
+selection and packet attribution.
+
 Start from `airmx-qingping-m5atom.yaml`. In a real configuration the sources
 can be Home Assistant sensors:
 

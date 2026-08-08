@@ -40,5 +40,4 @@ sensor:
 qingping_fdcd:
   temperature: source_temperature
   humidity: source_humidity
-  battery_level: 90
   advertising_interval: 1s
