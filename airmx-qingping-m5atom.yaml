@@ -27,7 +27,7 @@ sensor:
     unit_of_measurement: "°C"
     accuracy_decimals: 1
     update_interval: 10s
-    lambda: return 23.7f;
+    lambda: return 18.4f;
 
   - platform: template
     id: source_humidity
@@ -35,11 +35,10 @@ sensor:
     unit_of_measurement: "%"
     accuracy_decimals: 1
     update_interval: 10s
-    lambda: return 48.2f;
+    lambda: return 64.7f;
 
 qingping_fdcd:
   temperature: source_temperature
   humidity: source_humidity
   battery_level: 90
   advertising_interval: 1s
-

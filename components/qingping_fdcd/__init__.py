@@ -11,11 +11,24 @@ CODEOWNERS = []
 CONF_ADVERTISING_INTERVAL = "advertising_interval"
 CONF_BATTERY = "battery"
 CONF_BATTERY_LEVEL = "battery_level"
-CONF_INITIAL_HUMIDITY = "initial_humidity"
-CONF_INITIAL_TEMPERATURE = "initial_temperature"
+MIN_ADVERTISING_INTERVAL_MS = 20
+MAX_ADVERTISING_INTERVAL_MS = 1000
 
 qingping_fdcd_ns = cg.esphome_ns.namespace("qingping_fdcd")
 QingpingFDCD = qingping_fdcd_ns.class_("QingpingFDCD", cg.Component)
+
+
+def _validate_advertising_interval(value):
+    interval = cv.positive_time_period_milliseconds(value)
+    if not (
+        MIN_ADVERTISING_INTERVAL_MS
+        <= interval.total_milliseconds
+        <= MAX_ADVERTISING_INTERVAL_MS
+    ):
+        raise cv.Invalid(
+            "advertising_interval must be between 20ms and 1000ms"
+        )
+    return interval
 
 CONFIG_SCHEMA = cv.Schema(
     {
@@ -24,15 +37,9 @@ CONFIG_SCHEMA = cv.Schema(
         cv.Required(CONF_TEMPERATURE): cv.use_id(sensor.Sensor),
         cv.Required(CONF_HUMIDITY): cv.use_id(sensor.Sensor),
         cv.Optional(CONF_BATTERY): cv.use_id(sensor.Sensor),
-        cv.Optional(CONF_INITIAL_TEMPERATURE, default=23.0): cv.float_range(
-            min=-3276.8, max=3276.7
-        ),
-        cv.Optional(CONF_INITIAL_HUMIDITY, default=50.0): cv.float_range(
-            min=0.0, max=100.0
-        ),
         cv.Optional(CONF_BATTERY_LEVEL, default=100): cv.int_range(min=0, max=100),
-        cv.Optional(CONF_ADVERTISING_INTERVAL, default="1s"):
-            cv.positive_time_period_milliseconds,
+        cv.Optional(CONF_ADVERTISING_INTERVAL, default="100ms"):
+            _validate_advertising_interval,
     }
 ).extend(cv.COMPONENT_SCHEMA)
 
@@ -68,8 +75,6 @@ async def to_code(config):
         battery = await cg.get_variable(config[CONF_BATTERY])
         cg.add(var.set_battery_sensor(battery))
 
-    cg.add(var.set_initial_temperature(config[CONF_INITIAL_TEMPERATURE]))
-    cg.add(var.set_initial_humidity(config[CONF_INITIAL_HUMIDITY]))
     cg.add(var.set_battery_level(config[CONF_BATTERY_LEVEL]))
     cg.add(
         var.set_advertising_interval(

@@ -25,8 +25,15 @@ The component:
 
 - uses the ESP32's native BLE public address and embeds the same address in the
   FDCD frame;
-- advertises on the standard BLE advertising channels 37, 38 and 39;
-- repeats the current frame at a configurable interval (1 second by default);
+- includes channels 37, 38 and 39 in every legacy advertising event;
+- repeats the current frame at a configurable interval (100 ms by default),
+  nominally 10 times per second on every channel; accepted values range from
+  20 ms to 1 second;
+- accepts scan requests from any device but only permits BLE connections from
+  whitelisted devices, preventing a connection from interrupting advertising;
+- does not advertise fallback or stale measurements: advertising starts only
+  after temperature and humidity have finite states, stops when either becomes
+  unavailable, and also requires a valid battery state when `battery` is used;
 - updates the frame whenever its source temperature, humidity, or optional
   battery sensor publishes a new value;
 - exposes no GATT service.
@@ -44,7 +51,7 @@ qingping_fdcd:
   temperature: source_temperature
   humidity: source_humidity
   battery_level: 90
-  advertising_interval: 1s
+  advertising_interval: 100ms
 ```
 
 `temperature` and `humidity` reference any existing ESPHome sensor IDs. The

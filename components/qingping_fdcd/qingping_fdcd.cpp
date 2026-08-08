@@ -35,39 +35,24 @@ void QingpingFDCD::setup() {
   this->advertising_params_.adv_type = ADV_TYPE_IND;
   this->advertising_params_.own_addr_type = BLE_ADDR_TYPE_PUBLIC;
   this->advertising_params_.channel_map = ADV_CHNL_ALL;
-  this->advertising_params_.adv_filter_policy = ADV_FILTER_ALLOW_SCAN_ANY_CON_ANY;
+  // Keep the original connectable ADV_IND packet shape, but do not let an
+  // unrelated central stop the continuous advertisement stream. Scans remain
+  // unrestricted so the Qingping name is still available in scan responses.
+  this->advertising_params_.adv_filter_policy = ADV_FILTER_ALLOW_SCAN_ANY_CON_WLST;
 
-  this->temperature_sensor_->add_on_state_callback([this](float value) {
-    if (!std::isfinite(value))
-      return;
-    const int16_t encoded = encode_temperature_(value);
-    if (encoded != this->temperature_x10_) {
-      this->temperature_x10_ = encoded;
-      this->mark_payload_dirty_();
-    }
-  });
-
-  this->humidity_sensor_->add_on_state_callback([this](float value) {
-    if (!std::isfinite(value))
-      return;
-    const uint16_t encoded = encode_humidity_(value);
-    if (encoded != this->humidity_x10_) {
-      this->humidity_x10_ = encoded;
-      this->mark_payload_dirty_();
-    }
-  });
+  this->temperature_sensor_->add_on_state_callback([this](float value) { this->update_temperature_(value); });
+  this->humidity_sensor_->add_on_state_callback([this](float value) { this->update_humidity_(value); });
 
   if (this->battery_sensor_ != nullptr) {
-    this->battery_sensor_->add_on_state_callback([this](float value) {
-      if (!std::isfinite(value))
-        return;
-      const uint8_t encoded = encode_battery_(value);
-      if (encoded != this->battery_level_) {
-        this->battery_level_ = encoded;
-        this->mark_payload_dirty_();
-      }
-    });
+    this->battery_sensor_->add_on_state_callback([this](float value) { this->update_battery_(value); });
   }
+
+  if (this->temperature_sensor_->has_state())
+    this->update_temperature_(this->temperature_sensor_->state);
+  if (this->humidity_sensor_->has_state())
+    this->update_humidity_(this->humidity_sensor_->state);
+  if (this->battery_sensor_ != nullptr && this->battery_sensor_->has_state())
+    this->update_battery_(this->battery_sensor_->state);
 }
 
 void QingpingFDCD::loop() {
@@ -81,8 +66,17 @@ void QingpingFDCD::loop() {
   if (!this->address_loaded_ || millis() < this->retry_after_ms_)
     return;
 
+  if (!this->inputs_valid_()) {
+    if (this->advertising_) {
+      this->advertising_stop_reason_ = AdvertisingStopReason::INPUT_UNAVAILABLE;
+      this->stop_advertising_();
+    }
+    return;
+  }
+
   if (this->payload_dirty_) {
     if (this->advertising_ || this->advertising_starting_) {
+      this->advertising_stop_reason_ = AdvertisingStopReason::PAYLOAD_UPDATE;
       this->stop_advertising_();
       return;
     }
@@ -103,9 +97,84 @@ void QingpingFDCD::dump_config() {
   ESP_LOGCONFIG(TAG, "Qingping FDCD emulator:");
   ESP_LOGCONFIG(TAG, "  Advertising interval: %" PRIu32 " ms", this->advertising_interval_ms_);
   ESP_LOGCONFIG(TAG, "  Advertising channels: 37, 38, 39");
-  ESP_LOGCONFIG(TAG, "  Initial temperature: %.1f C", this->temperature_x10_ / 10.0f);
-  ESP_LOGCONFIG(TAG, "  Initial humidity: %.1f %%", this->humidity_x10_ / 10.0f);
-  ESP_LOGCONFIG(TAG, "  Battery: %u %%", this->battery_level_);
+  ESP_LOGCONFIG(TAG, "  Connection requests: whitelist only");
+  ESP_LOGCONFIG(TAG, "  Temperature input: %s", this->temperature_valid_ ? "ready" : "waiting");
+  ESP_LOGCONFIG(TAG, "  Humidity input: %s", this->humidity_valid_ ? "ready" : "waiting");
+  if (this->battery_sensor_ != nullptr)
+    ESP_LOGCONFIG(TAG, "  Battery input: %s", this->battery_valid_ ? "ready" : "waiting");
+  else
+    ESP_LOGCONFIG(TAG, "  Static battery: %u %%", this->battery_level_);
+  ESP_LOGCONFIG(TAG, "  Advertising state: %s", this->inputs_valid_() ? "sensor data ready" : "waiting for data");
+}
+
+bool QingpingFDCD::inputs_valid_() const {
+  return this->temperature_valid_ && this->humidity_valid_ &&
+         (this->battery_sensor_ == nullptr || this->battery_valid_);
+}
+
+void QingpingFDCD::log_input_transition_(bool was_valid) {
+  const bool is_valid = this->inputs_valid_();
+  if (was_valid == is_valid)
+    return;
+  if (is_valid) {
+    ESP_LOGW(TAG, "Sensor inputs ready; advertising enabled by temperature=%.1f C, humidity=%.1f %%, battery=%u %%",
+             this->temperature_x10_ / 10.0f, this->humidity_x10_ / 10.0f, this->battery_level_);
+  } else {
+    ESP_LOGW(TAG, "Sensor input unavailable; advertising disabled (temperature=%s, humidity=%s, battery=%s)",
+             this->temperature_valid_ ? "ready" : "unavailable", this->humidity_valid_ ? "ready" : "unavailable",
+             this->battery_sensor_ == nullptr ? "static" : (this->battery_valid_ ? "ready" : "unavailable"));
+  }
+}
+
+void QingpingFDCD::update_temperature_(float value) {
+  const bool inputs_were_valid = this->inputs_valid_();
+  const bool value_is_valid = std::isfinite(value);
+  if (value_is_valid) {
+    const int16_t encoded = encode_temperature_(value);
+    if (!this->temperature_valid_ || encoded != this->temperature_x10_) {
+      this->temperature_x10_ = encoded;
+      this->temperature_valid_ = true;
+      this->mark_payload_dirty_();
+    }
+  } else if (this->temperature_valid_) {
+    this->temperature_valid_ = false;
+    this->mark_payload_dirty_();
+  }
+  this->log_input_transition_(inputs_were_valid);
+}
+
+void QingpingFDCD::update_humidity_(float value) {
+  const bool inputs_were_valid = this->inputs_valid_();
+  const bool value_is_valid = std::isfinite(value);
+  if (value_is_valid) {
+    const uint16_t encoded = encode_humidity_(value);
+    if (!this->humidity_valid_ || encoded != this->humidity_x10_) {
+      this->humidity_x10_ = encoded;
+      this->humidity_valid_ = true;
+      this->mark_payload_dirty_();
+    }
+  } else if (this->humidity_valid_) {
+    this->humidity_valid_ = false;
+    this->mark_payload_dirty_();
+  }
+  this->log_input_transition_(inputs_were_valid);
+}
+
+void QingpingFDCD::update_battery_(float value) {
+  const bool inputs_were_valid = this->inputs_valid_();
+  const bool value_is_valid = std::isfinite(value);
+  if (value_is_valid) {
+    const uint8_t encoded = encode_battery_(value);
+    if (!this->battery_valid_ || encoded != this->battery_level_) {
+      this->battery_level_ = encoded;
+      this->battery_valid_ = true;
+      this->mark_payload_dirty_();
+    }
+  } else if (this->battery_valid_) {
+    this->battery_valid_ = false;
+    this->mark_payload_dirty_();
+  }
+  this->log_input_transition_(inputs_were_valid);
 }
 
 void QingpingFDCD::mark_payload_dirty_() { this->payload_dirty_ = true; }
@@ -177,7 +246,7 @@ void QingpingFDCD::configure_payload_() {
 }
 
 void QingpingFDCD::start_advertising_() {
-  const uint32_t interval_ms = std::clamp(this->advertising_interval_ms_, 20UL, 10240UL);
+  const uint32_t interval_ms = std::clamp(this->advertising_interval_ms_, 20UL, 1000UL);
   const uint16_t interval_units = static_cast<uint16_t>((interval_ms * 8U + 2U) / 5U);
   this->advertising_params_.adv_int_min = interval_units;
   this->advertising_params_.adv_int_max = interval_units;
@@ -200,6 +269,7 @@ void QingpingFDCD::stop_advertising_() {
     this->advertising_stopping_ = false;
     this->advertising_ = false;
     this->advertising_starting_ = false;
+    this->advertising_stop_reason_ = AdvertisingStopReason::UNKNOWN;
     ESP_LOGW(TAG, "Could not stop advertising: %s", esp_err_to_name(err));
   }
 }
@@ -228,12 +298,23 @@ void QingpingFDCD::gap_event_handler(esp_gap_ble_cb_event_t event, esp_ble_gap_c
       if (!this->advertising_) {
         this->retry_after_ms_ = millis() + 1000;
         ESP_LOGE(TAG, "Advertising start failed, status=%d", param->adv_start_cmpl.status);
+      } else {
+        ESP_LOGW(TAG, "Advertising ON: temperature=%.1f C, humidity=%.1f %%, battery=%u %%",
+                 this->temperature_x10_ / 10.0f, this->humidity_x10_ / 10.0f, this->battery_level_);
       }
       break;
     case ESP_GAP_BLE_ADV_STOP_COMPLETE_EVT:
       this->advertising_stopping_ = false;
       this->advertising_starting_ = false;
       this->advertising_ = false;
+      if (this->advertising_stop_reason_ == AdvertisingStopReason::INPUT_UNAVAILABLE) {
+        ESP_LOGW(TAG, "Advertising OFF: required sensor data is unavailable");
+      } else if (this->advertising_stop_reason_ == AdvertisingStopReason::PAYLOAD_UPDATE) {
+        ESP_LOGW(TAG, "Advertising OFF: applying sensor payload update");
+      } else {
+        ESP_LOGW(TAG, "Advertising OFF");
+      }
+      this->advertising_stop_reason_ = AdvertisingStopReason::UNKNOWN;
       break;
     default:
       break;
@@ -251,6 +332,7 @@ void QingpingFDCD::reset_ble_state_() {
   this->advertising_starting_ = false;
   this->advertising_stopping_ = false;
   this->advertising_ = false;
+  this->advertising_stop_reason_ = AdvertisingStopReason::UNKNOWN;
 }
 
 void QingpingFDCD::ble_before_disabled_event_handler() { this->reset_ble_state_(); }
