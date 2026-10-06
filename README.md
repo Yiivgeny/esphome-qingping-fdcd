@@ -1,126 +1,95 @@
-# Qingping FDCD emulator for ESPHome
+# Qingping CGG1 MiBeacon emulator for ESPHome
 
 [Русская версия](README_ru.md)
 
-## Purpose
+This branch provides an ESPHome component that emulates the BLE advertising of
+the `Qingping Temp RH M` (CGG1-M). The previous Qingping `0xFDCD` protocol is not
+supported in this branch.
 
-This external ESPHome component makes an ESP32 advertise as a Qingping Temp/RH
-Lite sensor. It allows a compatible humidifier to receive temperature and
-humidity from any ESPHome sensor, including values imported from Home
-Assistant, instead of using a physical Qingping sensor.
+## Behaviour
 
-The humidifier reads the emulated sensor passively from BLE advertisements.
+After boot the component:
 
-## Tested with
+1. advertises a Xiaomi MiBeacon `0xFE95` discovery frame with frame control
+   `0x5830`, product ID `0x0B48`, the ESP32 native public BLE MAC, and capability
+   byte `0x08`;
+2. switches to an unencrypted `0x5850` measurement frame after
+   `discovery_duration`;
+3. sends temperature and humidity in MiBeacon object `0x100D`;
+4. includes battery object `0x100A` only when `battery` or `battery_level` is
+   configured;
+5. increments the MiBeacon frame counter whenever the measurement payload is
+   rebuilt.
 
-- AIRMX AirWater A3S
-- TION Iris
+The scan response contains the original `Qingping Temp RH M` name. Legacy
+advertising uses channels 37, 38, and 39. No GATT service or BLE SMP pairing is
+implemented. At `DEBUG` log level the component prints the complete advertising
+payload and scan response in hexadecimal, so a capture can be compared byte for
+byte.
 
-Both devices successfully receive the advertised temperature and humidity.
-The implementation sends only the tested Qingping `0xFDCD` Service Data frame.
+The `0x5830` packet reproduces the observed unbound CGG1-M discovery state. The
+`0x5850` packet follows the open MiBeacon format documented by
+[pvvx/ATC_MiThermometer](https://github.com/pvvx/ATC_MiThermometer).
 
-## How it works
-
-The component:
-
-- uses the ESP32's native BLE public address and embeds the same address in the
-  FDCD frame;
-- includes channels 37, 38 and 39 in every legacy advertising event;
-- repeats the current frame at a configurable interval (100 ms by default),
-  nominally 10 times per second on every channel; accepted values range from
-  20 ms to 1 second;
-- accepts scan requests from any device but only permits BLE connections from
-  whitelisted devices, preventing a connection from interrupting advertising;
-- does not advertise fallback or stale measurements: advertising starts only
-  after temperature and humidity have finite states, stops when either becomes
-  unavailable, and also requires a valid battery state when `battery` is used;
-- updates the frame whenever its source temperature, humidity, or optional
-  battery sensor publishes a new value;
-- exposes no GATT service.
-
-## Installation
+## Configuration
 
 ```yaml
 external_components:
-  - source: github://Yiivgeny/esphome-qingping-fdcd@main
-    components: [qingping_fdcd]
+  - source: github://Yiivgeny/esphome-qingping-fdcd@mibeacon-cgg1
+    components: [qingping_cgg1]
 
 esp32_ble:
 
-qingping_fdcd:
+qingping_cgg1:
+  temperature: source_temperature
+  humidity: source_humidity
+  discovery_duration: 30s
+  advertising_interval: 1s
+```
+
+`temperature` and `humidity` reference existing ESPHome sensors. Battery is
+optional and can be supplied by a sensor:
+
+```yaml
+qingping_cgg1:
+  temperature: source_temperature
+  humidity: source_humidity
+  battery: source_battery
+```
+
+or as a static value:
+
+```yaml
+qingping_cgg1:
   temperature: source_temperature
   humidity: source_humidity
   battery_level: 90
-  advertising_interval: 100ms
 ```
 
-`temperature` and `humidity` reference any existing ESPHome sensor IDs. The
-optional `battery` setting can reference another sensor; otherwise the fixed
-`battery_level` value is used.
+When neither battery option is present, object `0x100A` is omitted. The
+component does not transmit fallback measurements: after discovery it starts
+measurement advertising only when all required inputs have finite values and
+stops when one becomes unavailable.
 
-## Using the original sensor MAC address
+## Options
 
-The ESP32 can use the BLE MAC address of the original sensor. Run the MAC
-override at boot with priority `400`, before the BLE stack is initialized.
-Replace the six bytes below with the original sensor address. Write them in
-the normal displayed order; do not reverse them.
-
-```yaml
-esphome:
-  includes:
-    - <esp_mac.h>
-  on_boot:
-    priority: 400
-    then:
-      - lambda: |-
-          // Write the MAC in normal order; do not reverse it.
-          const uint8_t mac[6] = {
-            0x10, 0x06, 0x1C, 0x15, 0xC5, 0xBA
-          };
-
-          const esp_err_t err =
-              esp_iface_mac_addr_set(mac, ESP_MAC_BT);
-
-          if (err == ESP_OK) {
-            ESP_LOGI(
-              "ble_mac",
-              "BLE MAC set to %02X:%02X:%02X:%02X:%02X:%02X",
-              mac[0], mac[1], mac[2],
-              mac[3], mac[4], mac[5]
-            );
-          } else {
-            ESP_LOGE(
-              "ble_mac",
-              "Failed to set BLE MAC: %s",
-              esp_err_to_name(err)
-            );
-          }
-```
-
-Keep the original sensor powered off while the emulator is using its address.
-Two active BLE devices with the same public MAC can cause unpredictable sensor
-selection and packet attribution.
-
-Start from `airmx-qingping-m5atom.yaml`. In a real configuration the sources
-can be Home Assistant sensors:
-
-```yaml
-api:
-
-sensor:
-  - platform: homeassistant
-    id: source_temperature
-    entity_id: sensor.room_temperature
-    internal: true
-
-  - platform: homeassistant
-    id: source_humidity
-    entity_id: sensor.room_humidity
-    internal: true
-```
+- `temperature` — required temperature sensor;
+- `humidity` — required humidity sensor;
+- `battery` — optional battery sensor;
+- `battery_level` — optional static battery level, `0..100`; it cannot be used
+  together with `battery`;
+- `discovery_duration` — `0x5830` phase duration from 1 second to 10 minutes,
+  30 seconds by default;
+- `advertising_interval` — 20 ms to 1 second, 1 second by default.
 
 Do not enable `esp32_ble.advertising`, `esp32_ble_beacon`, or
-`esp32_ble_server`: this component owns the legacy BLE advertising state.
+`esp32_ble_server`; this component owns raw BLE advertising.
 
-The component has been build-tested with ESPHome 2026.7.3 and ESP-IDF 5.5.5 on
-an M5Stack Atom (ESP32-PICO-D4).
+See `airmx-qingping-m5atom.yaml` for a complete example.
+
+## Not implemented
+
+This is an experimental plaintext profile. Original encrypted `0x5858` frames,
+bindkey provisioning, and the CGG1 GATT binding procedure are not implemented.
+The first test is whether the target accepts plaintext `0x100D` and `0x100A`
+objects.

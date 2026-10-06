@@ -1,6 +1,6 @@
 esphome:
-  name: airmx-qingping-emulator
-  friendly_name: AirMX Qingping Emulator
+  name: airmx-qingping-cgg1-emulator
+  friendly_name: AirMX Qingping CGG1 Emulator
 
 esp32:
   board: m5stack-atom
@@ -11,7 +11,7 @@ external_components:
   - source:
       type: local
       path: components
-    components: [qingping_fdcd]
+    components: [qingping_cgg1]
 
 logger:
 
@@ -37,7 +37,8 @@ sensor:
     update_interval: 10s
     lambda: return 64.7f;
 
-qingping_fdcd:
+qingping_cgg1:
   temperature: source_temperature
   humidity: source_humidity
+  discovery_duration: 30s
   advertising_interval: 1s

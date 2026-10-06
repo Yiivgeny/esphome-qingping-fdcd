@@ -11,11 +11,15 @@ CODEOWNERS = []
 CONF_ADVERTISING_INTERVAL = "advertising_interval"
 CONF_BATTERY = "battery"
 CONF_BATTERY_LEVEL = "battery_level"
+CONF_DISCOVERY_DURATION = "discovery_duration"
+
 MIN_ADVERTISING_INTERVAL_MS = 20
 MAX_ADVERTISING_INTERVAL_MS = 1000
+MIN_DISCOVERY_DURATION_MS = 1000
+MAX_DISCOVERY_DURATION_MS = 600000
 
-qingping_fdcd_ns = cg.esphome_ns.namespace("qingping_fdcd")
-QingpingFDCD = qingping_fdcd_ns.class_("QingpingFDCD", cg.Component)
+qingping_cgg1_ns = cg.esphome_ns.namespace("qingping_cgg1")
+QingpingCGG1 = qingping_cgg1_ns.class_("QingpingCGG1", cg.Component)
 
 
 def _validate_advertising_interval(value):
@@ -30,16 +34,34 @@ def _validate_advertising_interval(value):
         )
     return interval
 
+
+def _validate_discovery_duration(value):
+    duration = cv.positive_time_period_milliseconds(value)
+    if not (
+        MIN_DISCOVERY_DURATION_MS
+        <= duration.total_milliseconds
+        <= MAX_DISCOVERY_DURATION_MS
+    ):
+        raise cv.Invalid(
+            "discovery_duration must be between 1s and 10min"
+        )
+    return duration
+
+
 CONFIG_SCHEMA = cv.Schema(
     {
-        cv.GenerateID(): cv.declare_id(QingpingFDCD),
+        cv.GenerateID(): cv.declare_id(QingpingCGG1),
         cv.GenerateID(esp32_ble.CONF_BLE_ID): cv.use_id(esp32_ble.ESP32BLE),
         cv.Required(CONF_TEMPERATURE): cv.use_id(sensor.Sensor),
         cv.Required(CONF_HUMIDITY): cv.use_id(sensor.Sensor),
-        cv.Optional(CONF_BATTERY): cv.use_id(sensor.Sensor),
-        cv.Optional(CONF_BATTERY_LEVEL, default=100): cv.int_range(min=0, max=100),
-        cv.Optional(CONF_ADVERTISING_INTERVAL, default="100ms"):
+        cv.Exclusive(CONF_BATTERY, "battery_source"): cv.use_id(sensor.Sensor),
+        cv.Exclusive(CONF_BATTERY_LEVEL, "battery_source"): cv.int_range(
+            min=0, max=100
+        ),
+        cv.Optional(CONF_ADVERTISING_INTERVAL, default="1s"):
             _validate_advertising_interval,
+        cv.Optional(CONF_DISCOVERY_DURATION, default="30s"):
+            _validate_discovery_duration,
     }
 ).extend(cv.COMPONENT_SCHEMA)
 
@@ -48,7 +70,7 @@ def _final_validate(config):
     ble_config = fv.full_config.get().get("esp32_ble", {})
     if ble_config.get("advertising", False):
         raise cv.Invalid(
-            "qingping_fdcd owns BLE advertising; remove `advertising: true` "
+            "qingping_cgg1 owns BLE advertising; remove `advertising: true` "
             "from `esp32_ble:`"
         )
     return config
@@ -74,10 +96,16 @@ async def to_code(config):
     if CONF_BATTERY in config:
         battery = await cg.get_variable(config[CONF_BATTERY])
         cg.add(var.set_battery_sensor(battery))
+    if CONF_BATTERY_LEVEL in config:
+        cg.add(var.set_battery_level(config[CONF_BATTERY_LEVEL]))
 
-    cg.add(var.set_battery_level(config[CONF_BATTERY_LEVEL]))
     cg.add(
         var.set_advertising_interval(
             config[CONF_ADVERTISING_INTERVAL].total_milliseconds
+        )
+    )
+    cg.add(
+        var.set_discovery_duration(
+            config[CONF_DISCOVERY_DURATION].total_milliseconds
         )
     )
