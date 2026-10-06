@@ -71,6 +71,49 @@ component does not transmit fallback measurements: after discovery it starts
 measurement advertising only when all required inputs have finite values and
 stops when one becomes unavailable.
 
+## BLE MAC address
+
+By default the component uses the ESP32 native public BLE address. To emulate a
+specific sensor, override only the Bluetooth interface address before
+`esp32_ble` starts:
+
+```yaml
+esphome:
+  includes:
+    - <esp_mac.h>
+  on_boot:
+    - priority: 400
+      then:
+        - lambda: |-
+            // Normal display order; do not reverse these bytes.
+            const uint8_t ble_mac[6] = {
+              0x58, 0x2D, 0x34, 0x60, 0x78, 0x63
+            };
+
+            const esp_err_t err =
+                esp_iface_mac_addr_set(ble_mac, ESP_MAC_BT);
+            if (err == ESP_OK) {
+              ESP_LOGI(
+                "ble_mac",
+                "BLE MAC set to %02X:%02X:%02X:%02X:%02X:%02X",
+                ble_mac[0], ble_mac[1], ble_mac[2],
+                ble_mac[3], ble_mac[4], ble_mac[5]
+              );
+            } else {
+              ESP_LOGE(
+                "ble_mac",
+                "Failed to set BLE MAC: %s",
+                esp_err_to_name(err)
+              );
+            }
+```
+
+Priority `400` runs before the ESPHome BLE component, whose setup priority is
+`350`. The component later reads this address and writes it into the MiBeacon
+payload in the protocol's required byte order. This is a runtime override on
+every boot; it does not modify eFuse and does not change the Wi-Fi MAC. Keep the
+original sensor powered off while both devices would have the same address.
+
 ## Options
 
 - `temperature` — required temperature sensor;

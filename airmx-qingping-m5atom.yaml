@@ -1,6 +1,34 @@
 esphome:
   name: airmx-qingping-cgg1-emulator
   friendly_name: AirMX Qingping CGG1 Emulator
+  includes:
+    - <esp_mac.h>
+  on_boot:
+    - priority: 400
+      then:
+        - lambda: |-
+            // Set before esp32_ble starts (setup priority 350).
+            // Enter the MAC in normal display order; do not reverse it.
+            const uint8_t ble_mac[6] = {
+              0x58, 0x2D, 0x34, 0x60, 0x78, 0x63
+            };
+
+            const esp_err_t err =
+                esp_iface_mac_addr_set(ble_mac, ESP_MAC_BT);
+            if (err == ESP_OK) {
+              ESP_LOGI(
+                "ble_mac",
+                "BLE MAC set to %02X:%02X:%02X:%02X:%02X:%02X",
+                ble_mac[0], ble_mac[1], ble_mac[2],
+                ble_mac[3], ble_mac[4], ble_mac[5]
+              );
+            } else {
+              ESP_LOGE(
+                "ble_mac",
+                "Failed to set BLE MAC: %s",
+                esp_err_to_name(err)
+              );
+            }
 
 esp32:
   board: m5stack-atom
